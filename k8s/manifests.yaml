@@ -1,0 +1,190 @@
+---
+# ============================================================
+# Kubernetes манифесты для Debian Desktop (XFCE + VNC + noVNC)
+# ============================================================
+
+# 1. Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: debian-desktop
+  labels:
+    app: debian-desktop
+
+---
+# 2. Secret — VNC пароль (base64: echo -n "change-me" | base64)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: debian-desktop-secret
+  namespace: debian-desktop
+type: Opaque
+data:
+  # echo -n "change-me" | base64  →  Y2hhbmdlLW1l
+  vnc-password: Y2hhbmdlLW1l
+
+---
+# 3. PersistentVolumeClaim — хранилище данных пользователя
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: debian-desktop-home
+  namespace: debian-desktop
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: standard   # Раскомментируйте и укажите нужный класс
+
+---
+# 4. Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debian-desktop
+  namespace: debian-desktop
+  labels:
+    app: debian-desktop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debian-desktop
+  template:
+    metadata:
+      labels:
+        app: debian-desktop
+    spec:
+      containers:
+        - name: debian-desktop
+          image: debian-desktop:latest   # Замените на ваш registry: registry.example.com/debian-desktop:latest
+          imagePullPolicy: IfNotPresent
+
+          env:
+            - name: VNC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: debian-desktop-secret
+                  key: vnc-password
+            - name: VNC_RESOLUTION
+              value: "1280x800"
+            - name: VNC_DEPTH
+              value: "24"
+            - name: VNC_PORT
+              value: "5901"
+            - name: NOVNC_PORT
+              value: "6080"
+
+          ports:
+            - name: novnc
+              containerPort: 6080
+              protocol: TCP
+            - name: vnc
+              containerPort: 5901
+              protocol: TCP
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+
+          volumeMounts:
+            - name: home
+              mountPath: /home/debianuser
+            - name: shm
+              mountPath: /dev/shm
+
+          livenessProbe:
+            tcpSocket:
+              port: 5901
+            initialDelaySeconds: 30
+            periodSeconds: 30
+
+          readinessProbe:
+            tcpSocket:
+              port: 6080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: debian-desktop-home
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+
+---
+# 5. Service — ClusterIP (внутренний доступ)
+apiVersion: v1
+kind: Service
+metadata:
+  name: debian-desktop
+  namespace: debian-desktop
+spec:
+  selector:
+    app: debian-desktop
+  ports:
+    - name: novnc
+      port: 6080
+      targetPort: 6080
+    - name: vnc
+      port: 5901
+      targetPort: 5901
+
+---
+# 6. Service — NodePort (внешний доступ, если нет Ingress)
+apiVersion: v1
+kind: Service
+metadata:
+  name: debian-desktop-nodeport
+  namespace: debian-desktop
+spec:
+  type: NodePort
+  selector:
+    app: debian-desktop
+  ports:
+    - name: novnc
+      port: 6080
+      targetPort: 6080
+      nodePort: 30080    # Доступ: http://<NODE_IP>:30080/vnc.html
+    - name: vnc
+      port: 5901
+      targetPort: 5901
+      nodePort: 30901
+
+---
+# 7. Ingress (опционально — нужен ingress-controller типа nginx)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: debian-desktop-ingress
+  namespace: debian-desktop
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
+    # Обязательно для WebSocket (noVNC использует WebSocket)
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: debian.example.com    # Замените на ваш домен
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: debian-desktop
+                port:
+                  number: 6080

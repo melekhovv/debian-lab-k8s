@@ -1,0 +1,13 @@
+#!/bin/bash
+# xstartup - запуск X сессии VNC с XFCE
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+export DISPLAY=:1
+
+# Запуск D-Bus
+eval $(dbus-launch --sh-syntax)
+export DBUS_SESSION_BUS_ADDRESS
+
+# Запуск XFCE
+startxfce4 &
+wait

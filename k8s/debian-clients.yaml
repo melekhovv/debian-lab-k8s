@@ -1,0 +1,185 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debian-client-1
+  namespace: debian-lab
+  labels:
+    app: debian-client-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debian-client-1
+  template:
+    metadata:
+      labels:
+        app: debian-client-1
+    spec:
+      containers:
+      - name: debian-client-1
+        image: lscr.io/linuxserver/webtop:debian-xfce
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: TITLE
+          value: "Client 1 (192.168.2.1)"
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "Asia/Sakhalin"
+        - name: SUBFOLDER
+          value: "/"
+        ports:
+        - containerPort: 3000
+          name: http-gui
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: debian-client-1-service
+  namespace: debian-lab
+spec:
+  type: NodePort
+  selector:
+    app: debian-client-1
+  ports:
+  - port: 3000
+    targetPort: 3000
+    nodePort: 30081
+    name: http-gui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debian-client-2
+  namespace: debian-lab
+  labels:
+    app: debian-client-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debian-client-2
+  template:
+    metadata:
+      labels:
+        app: debian-client-2
+    spec:
+      containers:
+      - name: debian-client-2
+        image: lscr.io/linuxserver/webtop:debian-xfce
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: TITLE
+          value: "Client 2 (192.168.3.1)"
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "Asia/Sakhalin"
+        - name: SUBFOLDER
+          value: "/"
+        ports:
+        - containerPort: 3000
+          name: http-gui
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: debian-client-2-service
+  namespace: debian-lab
+spec:
+  type: NodePort
+  selector:
+    app: debian-client-2
+  ports:
+  - port: 3000
+    targetPort: 3000
+    nodePort: 30082
+    name: http-gui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debian-client-3
+  namespace: debian-lab
+  labels:
+    app: debian-client-3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debian-client-3
+  template:
+    metadata:
+      labels:
+        app: debian-client-3
+    spec:
+      containers:
+      - name: debian-client-3
+        image: lscr.io/linuxserver/webtop:debian-xfce
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: TITLE
+          value: "Client 3 (192.168.4.1)"
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "Asia/Sakhalin"
+        - name: SUBFOLDER
+          value: "/"
+        ports:
+        - containerPort: 3000
+          name: http-gui
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: debian-client-3-service
+  namespace: debian-lab
+spec:
+  type: NodePort
+  selector:
+    app: debian-client-3
+  ports:
+  - port: 3000
+    targetPort: 3000
+    nodePort: 30083
+    name: http-gui

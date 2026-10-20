@@ -1,0 +1,52 @@
+services:
+  debian-desktop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: debian-desktop
+    image: debian-desktop:latest
+
+    # Переменные окружения
+    environment:
+      - VNC_PASSWORD=change-me    # Пароль для VNC
+      - VNC_RESOLUTION=1280x800         # Разрешение экрана
+      - VNC_DEPTH=24                    # Глубина цвета
+      - VNC_PORT=5901
+      - NOVNC_PORT=6080
+
+    # Проброс портов
+    ports:
+      - "6080:6080"    # noVNC (веб-браузер) → http://localhost:6080/vnc.html
+      - "5901:5901"    # VNC клиент (RealVNC, TigerVNC и т.д.)
+
+    # Общие папки с хостом (опционально)
+    volumes:
+      - debian_home:/home/debianuser    # Сохранение данных пользователя
+      # - ./shared:/home/debianuser/shared  # Раскомментировать для доступа к папке хоста
+
+    # Ограничения ресурсов
+    deploy:
+      resources:
+        limits:
+          memory: 2G      # Максимум 2 ГБ RAM
+          cpus: "2.0"     # Максимум 2 CPU
+        reservations:
+          memory: 512M
+          cpus: "0.5"
+
+    # Проверка здоровья контейнера
+    healthcheck:
+      test: ["CMD", "bash", "-c", "vncserver -list | grep -q ':1'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    restart: unless-stopped
+
+    # Необходимо для работы GUI в контейнере
+    shm_size: 256m
+
+volumes:
+  debian_home:
+    driver: local
