@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
       - name: debian-desktop
-        image: lscr.io/linuxserver/webtop:debian-xfce
+        image: lscr.io/linuxserver/webtop:debian-xfce@sha256:918aa840a4374a2eb1ab5e05aebb7c869a6fb4563eb2015b829c08fa46725b2c  # pinned: update the digest deliberately
         imagePullPolicy: IfNotPresent
         env:
         - name: PUID
@@ -41,8 +41,10 @@ spec:
             memory: "1Gi"
             cpu: "500m"
           limits:
-            memory: "4Gi"
-            cpu: "4000m"
+            memory: "3Gi"
+            cpu: "2000m"
+        # privileged: the webtop image runs Docker (DinD) inside the server desktop.
+        # The desktop has passwordless sudo, so never expose it beyond localhost.
         securityContext:
           privileged: true
 ---
@@ -52,11 +54,10 @@ metadata:
   name: debian-desktop-service
   namespace: debian-lab
 spec:
-  type: NodePort
+  type: ClusterIP   # reached via kubectl port-forward only
   selector:
     app: debian-desktop
   ports:
   - port: 3000
     targetPort: 3000
-    nodePort: 30080
     name: http-gui

@@ -1,4 +1,4 @@
-# Скрипт автоматического развёртывания Debian Desktop в Kubernetes (Minikube + Hyper-V)
+﻿# Скрипт автоматического развёртывания Debian Desktop в Kubernetes (Minikube + Hyper-V)
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Continue"

@@ -2,3 +2,6 @@
 lab.config.ps1
 .env
 legacy/.env
+
+# Machine state backups (large, personal)
+backups/

@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: debian-client-1
-        image: lscr.io/linuxserver/webtop:debian-xfce
+        image: lscr.io/linuxserver/webtop:debian-xfce@sha256:918aa840a4374a2eb1ab5e05aebb7c869a6fb4563eb2015b829c08fa46725b2c  # pinned: update the digest deliberately
         imagePullPolicy: IfNotPresent
         env:
         - name: TITLE
@@ -38,7 +38,7 @@ spec:
             memory: "512Mi"
             cpu: "250m"
           limits:
-            memory: "2Gi"
+            memory: "1536Mi"
             cpu: "2000m"
         securityContext:
           capabilities:
@@ -51,13 +51,12 @@ metadata:
   name: debian-client-1-service
   namespace: debian-lab
 spec:
-  type: NodePort
+  type: ClusterIP   # reached via kubectl port-forward only
   selector:
     app: debian-client-1
   ports:
   - port: 3000
     targetPort: 3000
-    nodePort: 30081
     name: http-gui
 ---
 apiVersion: apps/v1
@@ -79,7 +78,7 @@ spec:
     spec:
       containers:
       - name: debian-client-2
-        image: lscr.io/linuxserver/webtop:debian-xfce
+        image: lscr.io/linuxserver/webtop:debian-xfce@sha256:918aa840a4374a2eb1ab5e05aebb7c869a6fb4563eb2015b829c08fa46725b2c  # pinned: update the digest deliberately
         imagePullPolicy: IfNotPresent
         env:
         - name: TITLE
@@ -100,7 +99,7 @@ spec:
             memory: "512Mi"
             cpu: "250m"
           limits:
-            memory: "2Gi"
+            memory: "1536Mi"
             cpu: "2000m"
         securityContext:
           capabilities:
@@ -113,13 +112,12 @@ metadata:
   name: debian-client-2-service
   namespace: debian-lab
 spec:
-  type: NodePort
+  type: ClusterIP   # reached via kubectl port-forward only
   selector:
     app: debian-client-2
   ports:
   - port: 3000
     targetPort: 3000
-    nodePort: 30082
     name: http-gui
 ---
 apiVersion: apps/v1
@@ -141,7 +139,7 @@ spec:
     spec:
       containers:
       - name: debian-client-3
-        image: lscr.io/linuxserver/webtop:debian-xfce
+        image: lscr.io/linuxserver/webtop:debian-xfce@sha256:918aa840a4374a2eb1ab5e05aebb7c869a6fb4563eb2015b829c08fa46725b2c  # pinned: update the digest deliberately
         imagePullPolicy: IfNotPresent
         env:
         - name: TITLE
@@ -162,7 +160,7 @@ spec:
             memory: "512Mi"
             cpu: "250m"
           limits:
-            memory: "2Gi"
+            memory: "1536Mi"
             cpu: "2000m"
         securityContext:
           capabilities:
@@ -175,11 +173,10 @@ metadata:
   name: debian-client-3-service
   namespace: debian-lab
 spec:
-  type: NodePort
+  type: ClusterIP   # reached via kubectl port-forward only
   selector:
     app: debian-client-3
   ports:
   - port: 3000
     targetPort: 3000
-    nodePort: 30083
     name: http-gui

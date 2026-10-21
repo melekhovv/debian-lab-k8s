@@ -1,4 +1,6 @@
-# Automatic starter for Debian Server and 3 Clients in Kubernetes
+﻿# Automatic starter for Debian Server and 3 Clients in Kubernetes
+#   -NoBrowser  do not open the desktops in the browser
+param([switch]$NoBrowser)
 $ErrorActionPreference = "Continue"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -6,45 +8,33 @@ Write-Host "  Starting Debian Lab Network in Kubernetes...            " -Foregro
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Settings and tool paths (lab.config.ps1) -> $minikube, $kubectl, $dockerExe, ports, $BindAddress
+# Settings, tool paths, topology and helpers -> $minikube, $kubectl, $LabMachines, ...
 . (Join-Path $PSScriptRoot "lab-common.ps1")
 Assert-LabTool "minikube" $minikube "MinikubePath"
 Assert-LabTool "kubectl"  $kubectl  "KubectlPath"
-$manifestServer  = Join-Path $PSScriptRoot "k8s\debian-webtop.yaml"
-$manifestClients = Join-Path $PSScriptRoot "k8s\debian-clients.yaml"
+
+function Stop-Lab([string]$Message) {
+    Write-Host "ERROR: $Message" -ForegroundColor Red
+    Read-Host "Press Enter to exit..."
+    exit 1
+}
 
 # 1. Check Docker Desktop
-Write-Host "[1/4] Checking Docker Desktop..." -ForegroundColor Yellow
-$dockerReady = $false
-try {
-    $null = docker info 2>&1
-    if ($LASTEXITCODE -eq 0) { $dockerReady = $true }
-} catch {}
-
-if (-not $dockerReady) {
+Write-Host "[1/7] Checking Docker Desktop..." -ForegroundColor Yellow
+$null = docker info 2>&1
+if ($LASTEXITCODE -ne 0) {
     Write-Host "Starting Docker Desktop..." -ForegroundColor Yellow
     Assert-LabTool "Docker Desktop" $dockerExe "DockerDesktopExe"
     Start-Process $dockerExe
     Write-Host "Waiting for Docker Engine to start..." -ForegroundColor Yellow
-    $retries = 30
-    while ($retries -gt 0) {
+    for ($i = 0; $i -lt 40; $i++) {
         Start-Sleep -Seconds 3
-        try {
-            $null = docker info 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                $dockerReady = $true
-                break
-            }
-        } catch {}
+        $null = docker info 2>&1
+        if ($LASTEXITCODE -eq 0) { break }
         Write-Host "." -NoNewline -ForegroundColor Yellow
-        $retries--
     }
     Write-Host ""
-    if (-not $dockerReady) {
-        Write-Host "ERROR: Could not connect to Docker. Please ensure Docker Desktop is running." -ForegroundColor Red
-        Read-Host "Press Enter to exit..."
-        exit 1
-    }
+    if ($LASTEXITCODE -ne 0) { Stop-Lab "Could not connect to Docker. Please ensure Docker Desktop is running." }
     Write-Host "Docker Engine is ready!" -ForegroundColor Green
 } else {
     Write-Host "Docker Desktop is already running." -ForegroundColor Green
@@ -52,115 +42,146 @@ if (-not $dockerReady) {
 
 # 2. Check Minikube
 Write-Host ""
-Write-Host "[2/4] Checking Kubernetes cluster (Minikube)..." -ForegroundColor Yellow
+Write-Host "[2/7] Checking Kubernetes cluster (Minikube)..." -ForegroundColor Yellow
+$mkStatus = & $minikube status 2>&1 | Out-String
+if ($mkStatus -match "Paused") {
+    Write-Host "Minikube is paused, resuming..." -ForegroundColor Yellow
+    & $minikube unpause
+}
 $mkStatus = & $minikube status 2>&1 | Out-String
 if ($mkStatus -notmatch "host: Running" -or $mkStatus -notmatch "apiserver: Running") {
     Write-Host "Starting Minikube cluster..." -ForegroundColor Yellow
-    & $minikube start --driver=docker
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: Minikube failed to start." -ForegroundColor Red
-        Read-Host "Press Enter to exit..."
-        exit 1
-    }
+    # --cpus/--memory only take effect when the cluster is created for the first time
+    & $minikube start --driver=docker --cpus=$MinikubeCpus --memory=$MinikubeMemory
+    if ($LASTEXITCODE -ne 0) { Stop-Lab "Minikube failed to start." }
 } else {
     Write-Host "Minikube cluster is already running." -ForegroundColor Green
 }
+$nodeMemMb = [math]::Round([long]((docker inspect minikube --format "{{.HostConfig.Memory}}" | Out-String).Trim()) / 1MB)
+if ($nodeMemMb -gt 0 -and $nodeMemMb -lt 6000) {
+    Write-Host "WARNING: the Minikube node has only $nodeMemMb MB of RAM; 4 desktops need ~6 GB." -ForegroundColor Yellow
+    Write-Host "         See README, section 'Resources', to recreate the cluster with more memory." -ForegroundColor Yellow
+}
 
-# 3. Check and deploy manifests
+# 3. Apply manifests (idempotent: changes in k8s\*.yaml are picked up on every start)
 Write-Host ""
-Write-Host "[3/4] Checking Deployments in Kubernetes..." -ForegroundColor Yellow
-$depServer = & $kubectl get deployment debian-desktop -n debian-lab 2>&1 | Out-String
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Deploying Debian Server manifest..." -ForegroundColor Yellow
-    & $kubectl apply -f $manifestServer
+Write-Host "[3/7] Applying manifests and waiting for pods..." -ForegroundColor Yellow
+& $kubectl apply -f (Join-Path $PSScriptRoot "k8s\debian-webtop.yaml") -f (Join-Path $PSScriptRoot "k8s\debian-clients.yaml")
+if ($LASTEXITCODE -ne 0) { Stop-Lab "kubectl apply failed." }
+foreach ($m in $LabMachines) {
+    # The first start downloads a ~1.5 GB image, so allow plenty of time
+    & $kubectl rollout status "deployment/$($m.Name)" -n $LabNamespace --timeout=900s
+    if ($LASTEXITCODE -ne 0) { Stop-Lab "Deployment $($m.Name) did not become ready. Check: kubectl get pods -n $LabNamespace" }
 }
 
-$depClients = & $kubectl get deployment debian-client-1 -n debian-lab 2>&1 | Out-String
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Deploying Debian 3 Clients manifest..." -ForegroundColor Yellow
-    & $kubectl apply -f $manifestClients
+foreach ($m in $LabMachines) {
+    $m.Pod = Get-LabPod $m.Name
+    $ctr = Get-LabContainer $m.Name
+    if (-not $m.Pod -or -not $ctr) { Stop-Lab "Running pod/container for $($m.Name) not found." }
+    $m.Pid = $ctr.Pid
 }
+Install-LabStateTool
 
-Write-Host "Waiting for pods to be ready..." -ForegroundColor Yellow
-& $kubectl rollout status deployment/debian-desktop -n debian-lab --timeout=120s
-& $kubectl rollout status deployment/debian-client-1 -n debian-lab --timeout=120s
-& $kubectl rollout status deployment/debian-client-2 -n debian-lab --timeout=120s
-& $kubectl rollout status deployment/debian-client-3 -n debian-lab --timeout=120s
-
-# 4. Configure Network Topology (IPs and Routing)
+# 4. Restore saved state of machines whose container is fresh
 Write-Host ""
-Write-Host "[4/4] Configuring IP Network Topology..." -ForegroundColor Yellow
+Write-Host "[4/7] Restoring saved machine state..." -ForegroundColor Yellow
+foreach ($m in $LabMachines) {
+    $name = $m.Name
+    $bak = $m.Backup
+    # /run/lab-restored lives in the container layer: it disappears when the container is recreated
+    $null = Invoke-Node "test -e /proc/$($m.Pid)/root/run/lab-restored"
+    if ($LASTEXITCODE -eq 0) { Write-Host "[$name] state already in place." -ForegroundColor Green; continue }
 
-docker exec minikube sysctl -w net.ipv4.conf.all.proxy_arp=1 net.ipv4.conf.default.proxy_arp=1 2>$null | Out-Null
+    # Backup missing in the node (e.g. after minikube delete) -> import the copy from the Windows disk
+    $null = Invoke-Node "test -d '$bak/fs'"
+    $tgz = Join-Path $BackupDir "$($m.Export).tgz"
+    if ($LASTEXITCODE -ne 0 -and (Test-Path -LiteralPath $tgz)) {
+        Write-Host "[$name] importing backup from $tgz ..." -ForegroundColor Yellow
+        $node = "/var/tmp/lab-import-$($m.Export).tgz"
+        docker cp $tgz "minikube:$node"
+        Invoke-Node "mkdir -p '$bak' && tar --numeric-owner --xattrs --xattrs-include='*' -xzf '$node' -C '$bak'; rc=`$?; rm -f '$node'; exit `$rc"
+        if ($LASTEXITCODE -ne 0) { Add-LabProblem "[$name] import of $tgz failed" }
+    }
 
-$serverPod = (& $kubectl get pods -n debian-lab -l app=debian-desktop -o jsonpath="{.items[0].metadata.name}").Trim()
-$c1Pod = (& $kubectl get pods -n debian-lab -l app=debian-client-1 -o jsonpath="{.items[0].metadata.name}").Trim()
-$c2Pod = (& $kubectl get pods -n debian-lab -l app=debian-client-2 -o jsonpath="{.items[0].metadata.name}").Trim()
-$c3Pod = (& $kubectl get pods -n debian-lab -l app=debian-client-3 -o jsonpath="{.items[0].metadata.name}").Trim()
-
-# Assign Client IPs
-& $kubectl exec -n debian-lab $c1Pod -- sudo ip addr replace 192.168.2.1/24 dev eth0 2>$null
-& $kubectl exec -n debian-lab $c2Pod -- sudo ip addr replace 192.168.3.1/24 dev eth0 2>$null
-& $kubectl exec -n debian-lab $c3Pod -- sudo ip addr replace 192.168.4.1/24 dev eth0 2>$null
-
-# Server Gateway IPs (only .254)
-$serverCid = (docker exec minikube crictl ps --name debian-desktop -q).Trim()
-$serverPid = (docker exec minikube crictl inspect $serverCid | ConvertFrom-Json).info.pid
-
-docker exec minikube nsenter -t $serverPid -n sysctl -w net.ipv4.ip_forward=1 2>$null | Out-Null
-docker exec minikube nsenter -t $serverPid -n ip addr replace 192.168.2.254/24 dev eth0 2>$null
-docker exec minikube nsenter -t $serverPid -n ip addr replace 192.168.3.254/24 dev eth0 2>$null
-docker exec minikube nsenter -t $serverPid -n ip addr replace 192.168.4.254/24 dev eth0 2>$null
-docker exec minikube nsenter -t $serverPid -n ip addr del 192.168.2.100/24 dev eth0 2>$null
-docker exec minikube nsenter -t $serverPid -n ip addr del 192.168.3.100/24 dev eth0 2>$null
-docker exec minikube nsenter -t $serverPid -n ip addr del 192.168.4.100/24 dev eth0 2>$null
-
-# Client routes via Server Gateway (.254)
-& $kubectl exec -n debian-lab $c1Pod -- sudo ip route replace 192.168.3.0/24 via 192.168.2.254 dev eth0 2>$null
-& $kubectl exec -n debian-lab $c1Pod -- sudo ip route replace 192.168.4.0/24 via 192.168.2.254 dev eth0 2>$null
-
-& $kubectl exec -n debian-lab $c2Pod -- sudo ip route replace 192.168.2.0/24 via 192.168.3.254 dev eth0 2>$null
-& $kubectl exec -n debian-lab $c2Pod -- sudo ip route replace 192.168.4.0/24 via 192.168.3.254 dev eth0 2>$null
-
-& $kubectl exec -n debian-lab $c3Pod -- sudo ip route replace 192.168.2.0/24 via 192.168.4.254 dev eth0 2>$null
-& $kubectl exec -n debian-lab $c3Pod -- sudo ip route replace 192.168.3.0/24 via 192.168.4.254 dev eth0 2>$null
-
-# Find peer veth interfaces
-$sLink = (& $kubectl exec -n debian-lab $serverPod -- cat /sys/class/net/eth0/iflink).Trim()
-$c1Link = (& $kubectl exec -n debian-lab $c1Pod -- cat /sys/class/net/eth0/iflink).Trim()
-$c2Link = (& $kubectl exec -n debian-lab $c2Pod -- cat /sys/class/net/eth0/iflink).Trim()
-$c3Link = (& $kubectl exec -n debian-lab $c3Pod -- cat /sys/class/net/eth0/iflink).Trim()
-
-$links = docker exec minikube ip link show
-$sVeth = ($links | Select-String "(\d+): (veth\w+)@if" | Where-Object { $_.Matches.Groups[1].Value -eq $sLink }).Matches.Groups[2].Value
-$c1Veth = ($links | Select-String "(\d+): (veth\w+)@if" | Where-Object { $_.Matches.Groups[1].Value -eq $c1Link }).Matches.Groups[2].Value
-$c2Veth = ($links | Select-String "(\d+): (veth\w+)@if" | Where-Object { $_.Matches.Groups[1].Value -eq $c2Link }).Matches.Groups[2].Value
-$c3Veth = ($links | Select-String "(\d+): (veth\w+)@if" | Where-Object { $_.Matches.Groups[1].Value -eq $c3Link }).Matches.Groups[2].Value
-
-# Host routes
-docker exec minikube ip route replace 192.168.2.1 dev $c1Veth scope host
-docker exec minikube ip route replace 192.168.3.1 dev $c2Veth scope host
-docker exec minikube ip route replace 192.168.4.1 dev $c3Veth scope host
-docker exec minikube ip route replace 192.168.2.254 dev $sVeth scope host
-docker exec minikube ip route replace 192.168.3.254 dev $sVeth scope host
-docker exec minikube ip route replace 192.168.4.254 dev $sVeth scope host
-
-# Set custom tab titles
-$titleList = @(
-    @{ Pod = $serverPod; Title = "Server (Zabbix)" },
-    @{ Pod = $c1Pod;     Title = "Client 1 (192.168.2.1)" },
-    @{ Pod = $c2Pod;     Title = "Client 2 (192.168.3.1)" },
-    @{ Pod = $c3Pod;     Title = "Client 3 (192.168.4.1)" }
-)
-foreach ($t in $titleList) {
-    $p = $t.Pod
-    $tit = $t.Title
-    $py = "with open('/usr/share/selkies/web/index.html') as f: c=f.read()`nimport re; c=re.sub(r'<title>.*?</title>', '<title>$tit</title><script>document.title=\`"$tit\`";setInterval(function(){if(document.title!=\`"$tit\`")document.title=\`"$tit\`"},500);</script>', c)`nwith open('/usr/share/selkies/web/index.html','w') as f: f.write(c)`nwith open('/usr/share/selkies/web/manifest.json') as f: m=f.read()`nwith open('/usr/share/selkies/web/manifest.json','w') as f: f.write(m.replace('Debian XFCE', '$tit'))"
-    $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($py))
-    & $kubectl exec -n debian-lab $p -- python3 -c "import base64; exec(base64.b64decode('$b64'))" 2>$null
+    $null = Invoke-Node "test -d '$bak/fs'"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[$name] no saved state, starting clean." -ForegroundColor Gray
+    } else {
+        Write-Host "[$name] restoring from $bak ..." -ForegroundColor Yellow
+        $exArgs = ($LabStateExcludes | ForEach-Object { "'$_'" }) -join " "
+        Invoke-Node "python3 /usr/local/bin/lab-state.py restore '$bak/fs' /proc/$($m.Pid)/root $exArgs"
+        if ($LASTEXITCODE -ne 0) {
+            # No marker: save-state will refuse to overwrite the good backup with this broken state
+            Add-LabProblem "[$name] restore failed; fix the problem and run start-debian again"
+            continue
+        }
+    }
+    Invoke-Node "mkdir -p /proc/$($m.Pid)/root/run && touch /proc/$($m.Pid)/root/run/lab-restored" | Out-Null
 }
 
-# 5. Ensure Hostname wrappers and Sync Service
+# 5. Network topology: server routes between the three client subnets
+Write-Host ""
+Write-Host "[5/7] Configuring IP network topology..." -ForegroundColor Yellow
+$s = $LabServer
+$net = @"
+err=0
+fail() { echo "network: `$*"; err=`$((err+1)); }
+# Node-side veth of a pod (its eth0 is 'eth0@ifN', N = index of the peer in the node)
+peer() {
+  idx=`$(nsenter -t `$1 -n ip -o link show eth0 | sed -n 's/.*eth0@if\([0-9]*\).*/\1/p')
+  ip -o link | awk -F': ' -v i="`$idx" '`$1==i { split(`$2, a, "@"); print a[1] }'
+}
+sysctl -qw net.ipv4.conf.all.proxy_arp=1 net.ipv4.conf.all.rp_filter=0 || fail "node sysctl"
+
+SPID=$($s.Pid)
+SV=`$(peer `$SPID); [ -n "`$SV" ] || fail "server veth not found"
+SIP=`$(nsenter -t `$SPID -n ip -4 -o addr show dev eth0 | awk '{print `$4}' | cut -d/ -f1 | grep -v '^192\.168\.' | head -1)
+# Packets forwarded by the server come back in through its veth with client source addresses
+sysctl -qw net.ipv4.conf.`$SV.rp_filter=0 net.ipv4.conf.`$SV.proxy_arp=1 || fail "server veth sysctl"
+nsenter -t `$SPID -n sysctl -qw net.ipv4.ip_forward=1 net.ipv4.conf.all.send_redirects=0 net.ipv4.conf.eth0.send_redirects=0 || fail "server sysctl"
+for ip in $($s.Ips -join " "); do
+  nsenter -t `$SPID -n ip addr replace `$ip/24 dev eth0 || fail "server addr `$ip"
+  ip route replace `$ip dev `$SV scope host || fail "node route `$ip"
+done
+# Table 100: everything from clients to lab subnets goes to the server first
+ip route replace default via `$SIP dev `$SV onlink table 100 || fail "table 100"
+while ip rule del pref 1000 2>/dev/null; do :; done
+# Lab packets cross the node twice (client -> node -> server -> node -> client); conntrack
+# marks the second pass INVALID and kube-proxy drops it, so lab-to-lab traffic is not tracked.
+iptables -t raw -N LAB-NOTRACK 2>/dev/null; iptables -t raw -F LAB-NOTRACK
+iptables -t raw -C PREROUTING -j LAB-NOTRACK 2>/dev/null || iptables -t raw -I PREROUTING -j LAB-NOTRACK || fail "raw PREROUTING"
+for src in $(($LabSubnets | ForEach-Object { "$_.0/24" }) -join " "); do
+  for dst in $(($LabSubnets | ForEach-Object { "$_.0/24" }) -join " "); do
+    iptables -t raw -A LAB-NOTRACK -s `$src -d `$dst -j NOTRACK || fail "notrack `$src `$dst"
+  done
+done
+
+"@
+foreach ($c in $LabClients) {
+    $others = $LabSubnets | Where-Object { $_ -ne $c.Subnet }
+    $net += @"
+CPID=$($c.Pid)
+CV=`$(peer `$CPID); [ -n "`$CV" ] || fail "$($c.Name) veth not found"
+sysctl -qw net.ipv4.conf.`$CV.proxy_arp=1 || fail "$($c.Name) veth sysctl"
+nsenter -t `$CPID -n ip addr replace $($c.Ip)/24 dev eth0 || fail "$($c.Name) addr"
+ip route replace $($c.Ip) dev `$CV scope host || fail "node route $($c.Ip)"
+$(($others | ForEach-Object { "nsenter -t `$CPID -n ip route replace $_.0/24 via $($c.Gateway) dev eth0 || fail `"$($c.Name) route $_`"" }) -join "`n")
+$(($LabSubnets | ForEach-Object { "ip rule add pref 1000 iif `$CV to $_.0/24 lookup 100 || fail `"$($c.Name) rule $_`"" }) -join "`n")
+
+"@
+}
+$net += "exit `$err`n"
+Set-NodeFile "/var/tmp/lab-network.sh" $net | Out-Null
+Invoke-Node "sh /var/tmp/lab-network.sh"
+if ($LASTEXITCODE -ne 0) { Add-LabProblem "network setup reported $LASTEXITCODE error(s), see messages above" }
+
+# 6. Machine setup: hostname, tab titles, /zabbix proxy, services
+Write-Host ""
+Write-Host "[6/7] Configuring machines and starting services..." -ForegroundColor Yellow
+
+# hostname/hostnamectl wrappers. /etc/hostname in a pod is managed by Kubernetes and is lost
+# with the pod, so the name is also kept in /etc/lab-hostname (saved with the machine state)
+# and applied to the kernel by this script on every start.
 $hostnameScript = @'
 #!/bin/bash
 TARGET="$1"
@@ -169,62 +190,64 @@ if [ "$1" = "set-hostname" ] || [ "$1" = "hostname" ]; then
 fi
 
 if [ -z "$TARGET" ] || [[ "$TARGET" == -* ]]; then
-    /bin/hostname "$@"
-    exit 0
+    exec /bin/hostname "$@"
 fi
 
-echo "$TARGET" > /etc/hostname
-sed -i "/127.0.0.1\s\+$TARGET/d" /etc/hosts 2>/dev/null
-echo "127.0.0.1 $TARGET" >> /etc/hosts
-sleep 1.2
-echo "Hostname set to: $(/bin/hostname)"
+echo "$TARGET" > /etc/lab-hostname
+echo "$TARGET" > /etc/hostname 2>/dev/null
+sed -i '/# lab-hostname$/d' /etc/hosts 2>/dev/null
+echo "127.0.1.1 $TARGET # lab-hostname" >> /etc/hosts
+if /bin/hostname "$TARGET" 2>/dev/null; then
+    echo "Hostname set to: $(/bin/hostname)"
+else
+    echo "Hostname saved as '$TARGET'. It becomes active after the next start-debian (no permission to change it from inside the container)."
+fi
 '@
-$hB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($hostnameScript))
-foreach ($p in @($serverPod, $c1Pod, $c2Pod, $c3Pod)) {
-    & $kubectl exec -n debian-lab $p -- bash -c "echo '$hB64' | base64 -d > /usr/local/bin/hostname && chmod +x /usr/local/bin/hostname && cp /usr/local/bin/hostname /usr/local/bin/hostnamectl" 2>$null
-}
+$hB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($hostnameScript.Replace("`r`n", "`n")))
+Set-NodeFile "/var/tmp/lab-hostname.sh" @'
+h=$(cat /proc/$1/root/etc/lab-hostname 2>/dev/null)
+[ -n "$h" ] || exit 0
+nsenter -t $1 -u hostname "$h" && echo "$h" > /proc/$1/root/etc/hostname && echo "[$2] hostname: $h"
+'@ | Out-Null
 
-# 6. Ensure Zabbix, MariaDB, and Apache are running on Server
-Write-Host "Checking Zabbix and database services on Server..." -ForegroundColor Yellow
-$hasZbx = (& $kubectl exec -n debian-lab $serverPod -- which zabbix_server 2>$null)
-if (-not $hasZbx) {
-    Write-Host "Restoring Zabbix packages and database from persistent snapshot..." -ForegroundColor Yellow
-    $sCid = (docker exec minikube crictl ps --name debian-desktop -q).Trim()
-    $sPid = (docker exec minikube python3 -c "import json, subprocess; d=json.loads(subprocess.check_output(['crictl', 'inspect', '$sCid'])); print(d['info']['pid'])").Trim()
-    $bDir = "/var/backup_desktop/fs"
-    $checkB = (docker exec minikube ls -d /var/backup_desktop/fs 2>$null)
-    if (-not $checkB) { $bDir = "/var/backup_desktop_106/fs" }
-    docker exec minikube cp -a "$bDir/." "/proc/$sPid/root/" 2>$null
-}
+# Tab title: idempotent (the injected script is replaced, not appended, on every run)
+$titlePy = @'
+import json, re, sys
+t = sys.argv[1]
+idx = '/usr/share/selkies/web/index.html'
+c = open(idx).read()
+c = re.sub(r'<script id="lab-title">.*?</script>', '', c, flags=re.S)
+js = json.dumps(t)
+c = re.sub(r'<title>.*?</title>', lambda m: '<title>%s</title><script id="lab-title">document.title=%s;setInterval(function(){if(document.title!=%s)document.title=%s},500);</script>' % (t, js, js, js), c, count=1, flags=re.S)
+open(idx, 'w').write(c)
+mf = '/usr/share/selkies/web/manifest.json'
+m = json.load(open(mf))
+m['name'] = m['short_name'] = t
+json.dump(m, open(mf, 'w'))
+'@
+$tB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($titlePy.Replace("`r`n", "`n")))
 
-# 7. Check and restore Clients if backups exist
-$clientList = @(
-    @{ Name = "debian-client-1"; Pod = $c1Pod; Backup = "/var/backup_client1/fs" },
-    @{ Name = "debian-client-2"; Pod = $c2Pod; Backup = "/var/backup_client2/fs" },
-    @{ Name = "debian-client-3"; Pod = $c3Pod; Backup = "/var/backup_client3/fs" }
-)
-foreach ($cl in $clientList) {
-    $cpod = $cl.Pod
-    $cname = $cl.Name
-    $cbak = $cl.Backup
-    $hasPing = (& $kubectl exec -n debian-lab $cpod -- which ping 2>$null)
-    if (-not $hasPing) {
-        $hasBak = (docker exec minikube ls -d $cbak 2>$null)
-        if ($hasBak) {
-            Write-Host "Restoring $cname from persistent backup..." -ForegroundColor Yellow
-            $cid = (docker exec minikube crictl ps --name $cname -q).Trim()
-            $cpid = (docker exec minikube python3 -c "import json, subprocess; d=json.loads(subprocess.check_output(['crictl', 'inspect', '$cid'])); print(d['info']['pid'])").Trim()
-            docker exec minikube cp -a "$cbak/." "/proc/$cpid/root/" 2>$null
-        }
+foreach ($m in $LabMachines) {
+    $p = $m.Pod
+    & $kubectl exec -n $LabNamespace $p -- bash -c "echo '$hB64' | base64 -d > /usr/local/bin/hostname && chmod +x /usr/local/bin/hostname && cp /usr/local/bin/hostname /usr/local/bin/hostnamectl"
+    if ($LASTEXITCODE -ne 0) { Add-LabProblem "[$($m.Name)] hostname wrapper not installed" }
+    # Apply the saved hostname to the pod's UTS namespace (needs node privileges)
+    Invoke-Node "sh /var/tmp/lab-hostname.sh $($m.Pid) $($m.Name)"
+
+    & $kubectl exec -n $LabNamespace $p -- sh -c "test -f /usr/share/selkies/web/index.html" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        & $kubectl exec -n $LabNamespace $p -- python3 -c "import base64; exec(base64.b64decode('$tB64'))" $m.Title
+        if ($LASTEXITCODE -ne 0) { Add-LabProblem "[$($m.Name)] tab title not set" }
+    } else {
+        Write-Host "[$($m.Name)] selkies web UI not found (image changed?), tab title skipped." -ForegroundColor Gray
     }
-    # Ensure zabbix-agent service is started if installed
-    & $kubectl exec -n debian-lab $cpod -- service zabbix-agent start 2>$null
 }
 
-# Ensure Nginx reverse proxies /zabbix
+# Nginx (webtop front end) reverse proxies /zabbix to Apache on the server
 $nginxPy = @'
-with open('/etc/nginx/sites-available/default') as f:
-    c = f.read()
+import os
+f = '/etc/nginx/sites-available/default'
+c = open(f).read()
 if '/zabbix' not in c:
     block = """  location /zabbix {
     proxy_pass http://127.0.0.1:80/zabbix;
@@ -233,70 +256,108 @@ if '/zabbix' not in c:
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
   }\n"""
+    if '  location / {' not in c:
+        raise SystemExit("location / not found in " + f)
     c = c.replace('  location / {', block + '  location / {', 1)
-    with open('/etc/nginx/sites-available/default', 'w') as f:
-        f.write(c)
+    open(f, 'w').write(c)
 '@
-$ngB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($nginxPy))
-& $kubectl exec -n debian-lab $serverPod -- python3 -c "import base64; exec(base64.b64decode('$ngB64'))" 2>$null
-& $kubectl exec -n debian-lab $serverPod -- nginx -s reload 2>$null
+$ngB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($nginxPy.Replace("`r`n", "`n")))
+& $kubectl exec -n $LabNamespace $LabServer.Pod -- python3 -c "import base64; exec(base64.b64decode('$ngB64'))"
+if ($LASTEXITCODE -eq 0) { & $kubectl exec -n $LabNamespace $LabServer.Pod -- nginx -s reload 2>&1 | Out-Null }
+if ($LASTEXITCODE -ne 0) { Add-LabProblem "[server] nginx /zabbix proxy not configured" }
 
-# Start MariaDB, Apache2, Zabbix Server and Agent
-& $kubectl exec -n debian-lab $serverPod -- service mariadb start 2>$null
-& $kubectl exec -n debian-lab $serverPod -- service apache2 start 2>$null
-& $kubectl exec -n debian-lab $serverPod -- service zabbix-server start 2>$null
-& $kubectl exec -n debian-lab $serverPod -- service zabbix-agent start 2>$null
-
-# Ensure UI audio/video streaming is healthy on Server and all Clients
-foreach ($targetPod in @($serverPod, $c1Pod, $c2Pod, $c3Pod)) {
-    $uiCheck = (& $kubectl exec -n debian-lab $targetPod -- su - abc -c "PULSE_RUNTIME_PATH=/defaults pactl info" 2>&1)
-    if ($uiCheck -match "Connection refused") {
-        Write-Host "Fixing stale display/audio stream sockets on $targetPod..." -ForegroundColor Yellow
-        & $kubectl exec -n debian-lab $targetPod -- bash -c "killall -9 Xvfb xfce4-session selkies pulseaudio 2>/dev/null; rm -rf /tmp/.X1-lock /tmp/.X11-unix/* /defaults/native /defaults/pid /dev/shm/*" 2>$null
+# Services from lab.config.ps1 ($ServerServices / $ClientServices), if installed
+foreach ($m in $LabMachines) {
+    foreach ($svc in $m.Services) {
+        & $kubectl exec -n $LabNamespace $m.Pod -- test -x "/etc/init.d/$svc" 2>$null
+        if ($LASTEXITCODE -ne 0) { Write-Host "[$($m.Name)] $svc is not installed, skipped." -ForegroundColor Gray; continue }
+        & $kubectl exec -n $LabNamespace $m.Pod -- sh -c "service $svc status >/dev/null 2>&1 || service $svc start" 2>&1 | Out-Null
+        & $kubectl exec -n $LabNamespace $m.Pod -- sh -c "service $svc status >/dev/null 2>&1"
+        if ($LASTEXITCODE -eq 0) { Write-Host "[$($m.Name)] $svc running." -ForegroundColor Green }
+        else { Add-LabProblem "[$($m.Name)] service $svc failed to start (see: kubectl exec -n $LabNamespace $($m.Pod) -- service $svc status)" }
     }
 }
 
-Write-Host "Network topology, Zabbix, and tab titles are active!" -ForegroundColor Green
+# Desktop audio/video health check (restarts the session only if it is really broken)
+foreach ($m in $LabMachines) {
+    $uiCheck = (& $kubectl exec -n $LabNamespace $m.Pod -- su - abc -c "PULSE_RUNTIME_PATH=/defaults pactl info" 2>&1) | Out-String
+    if ($uiCheck -match "Connection refused") {
+        Write-Host "[$($m.Name)] fixing stale display/audio sockets (desktop session restarts)..." -ForegroundColor Yellow
+        & $kubectl exec -n $LabNamespace $m.Pod -- bash -c "killall -9 Xvfb xfce4-session selkies pulseaudio 2>/dev/null; rm -rf /tmp/.X1-lock /tmp/.X11-unix/* /defaults/native /defaults/pid /dev/shm/*" 2>$null
+    }
+}
+
+# Self-test: client 1 -> client 2 must get an answer (a TCP RST from a closed port is enough)
+# and the server's forwarding counter must grow, i.e. traffic really goes through the server.
+$c1 = $LabClients[0]; $c2 = $LabClients[1]
+$fwdCount = { [long]((Invoke-Node "nsenter -t $($LabServer.Pid) -n cat /proc/net/snmp" | Select-String '^Ip: \d' | Select-Object -First 1).ToString() -split ' ')[6] }
+$probe = "import socket`ns=socket.socket(); s.settimeout(3)`ntry:`n s.connect(('$($c2.Ip)', 9)); print('ok')`nexcept ConnectionRefusedError: print('ok')`nexcept Exception as e: print(e)"
+$probeB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($probe))
+$fwdBefore = & $fwdCount
+$probeOut = (& $kubectl exec -n $LabNamespace $c1.Pod -- python3 -c "import base64; exec(base64.b64decode('$probeB64'))" 2>&1 | Out-String).Trim()
+$fwdAfter = & $fwdCount
+if ($probeOut -ne "ok") { Add-LabProblem "network test: $($c1.Ip) cannot reach $($c2.Ip) ($probeOut)" }
+elseif ($fwdAfter - $fwdBefore -lt 2) { Add-LabProblem "network test: $($c1.Ip) -> $($c2.Ip) bypasses the server" }
+else { Write-Host "Network test: $($c1.Ip) -> $($c2.Ip) OK, routed via the server." -ForegroundColor Green }
+
+# 7. Port-forwards (supervised: restarted automatically if kubectl drops the connection)
+Write-Host ""
+Write-Host "[7/7] Starting port-forwards..." -ForegroundColor Yellow
+function Test-PortListening([int]$Port) {
+    [bool](Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
+}
+function Start-LabForward($m) {
+    Start-Process $kubectl -ArgumentList "port-forward svc/$($m.Service) -n $LabNamespace $($m.Port):3000 --address $BindAddress" -PassThru -WindowStyle Hidden
+}
+foreach ($m in $LabMachines) {
+    $busy = Get-NetTCPConnection -State Listen -LocalPort $m.Port -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($busy) {
+        $owner = (Get-Process -Id $busy.OwningProcess -ErrorAction SilentlyContinue).ProcessName
+        Stop-Lab "Port $($m.Port) is already in use by '$owner' (PID $($busy.OwningProcess)). Close it (another start-debian window?) or change the port in lab.config.ps1."
+    }
+}
+foreach ($m in $LabMachines) { $m.Proc = Start-LabForward $m }
+for ($i = 0; $i -lt 30 -and @($LabMachines | Where-Object { -not (Test-PortListening $_.Port) }).Count -gt 0; $i++) {
+    Start-Sleep -Milliseconds 500
+}
+foreach ($m in $LabMachines) {
+    if (-not (Test-PortListening $m.Port)) { Add-LabProblem "port-forward for $($m.Name) on port $($m.Port) did not start" }
+}
 
 Write-Host ""
-Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "  SUCCESS! All 4 machines are connected and ready!         " -ForegroundColor Green
+if ($LabProblems.Count -eq 0) {
+    Write-Host "==========================================================" -ForegroundColor Green
+    Write-Host "  SUCCESS! All 4 machines are connected and ready!         " -ForegroundColor Green
+} else {
+    Write-Host "==========================================================" -ForegroundColor Red
+    Write-Host "  Started with $($LabProblems.Count) problem(s):" -ForegroundColor Red
+    $LabProblems | ForEach-Object { Write-Host "   - $_" -ForegroundColor Red }
+}
 Write-Host "  Server GUI: http://localhost:$ServerPort" -ForegroundColor Cyan
 Write-Host "  Zabbix Web: http://localhost:$ServerPort/zabbix" -ForegroundColor Magenta
-Write-Host "  Client 1:   http://localhost:$($ClientPorts[0]) (IP: 192.168.2.1)" -ForegroundColor Cyan
-Write-Host "  Client 2:   http://localhost:$($ClientPorts[1]) (IP: 192.168.3.1)" -ForegroundColor Cyan
-Write-Host "  Client 3:   http://localhost:$($ClientPorts[2]) (IP: 192.168.4.1)" -ForegroundColor Cyan
+foreach ($c in $LabClients) { Write-Host "  $($c.Title): http://localhost:$($c.Port)" -ForegroundColor Cyan }
+if ($BindAddress -ne "127.0.0.1") {
+    Write-Host "  WARNING: desktops have no password and listen on $BindAddress (whole network)." -ForegroundColor Yellow
+}
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "NOTE: Keep this window open while working in the lab!" -ForegroundColor Yellow
-Write-Host "To stop the session - close this window." -ForegroundColor Gray
+Write-Host "Before shutting down run save-state.bat (or stop-debian.bat, it offers to save)." -ForegroundColor Yellow
 Write-Host ""
 
-# Open 4 browser tabs
-Start-Process "http://localhost:$ServerPort"
-foreach ($cp in $ClientPorts) { Start-Process "http://localhost:$cp" }
-
-# Start port-forwards
-$ports = @(
-    @{ Svc = "debian-desktop-service";  Port = $ServerPort },
-    @{ Svc = "debian-client-1-service"; Port = $ClientPorts[0] },
-    @{ Svc = "debian-client-2-service"; Port = $ClientPorts[1] },
-    @{ Svc = "debian-client-3-service"; Port = $ClientPorts[2] }
-)
-
-$procs = @()
-foreach ($entry in $ports) {
-    $svc = $entry.Svc
-    $p   = $entry.Port
-    $proc = Start-Process $kubectl -ArgumentList "port-forward svc/$svc -n debian-lab ${p}:3000 --address $BindAddress" -PassThru -WindowStyle Hidden
-    $procs += $proc
-}
+if (-not $NoBrowser) { foreach ($m in $LabMachines) { Start-Process "http://localhost:$($m.Port)" } }
 
 try {
-    Write-Host "All port forwards running. Press Ctrl+C to stop..." -ForegroundColor Green
+    Write-Host "All port forwards running. Press Ctrl+C or close the window to stop..." -ForegroundColor Green
     while ($true) {
-        Start-Sleep -Seconds 2
+        Start-Sleep -Seconds 3
+        foreach ($m in $LabMachines) {
+            if ($m.Proc.HasExited) {
+                Write-Host "$(Get-Date -Format HH:mm:ss) port-forward for $($m.Name) stopped, restarting..." -ForegroundColor Yellow
+                $m.Proc = Start-LabForward $m
+            }
+        }
     }
 } finally {
-    $procs | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+    $LabMachines | ForEach-Object { if ($_.Proc) { Stop-Process -Id $_.Proc.Id -Force -ErrorAction SilentlyContinue } }
 }
