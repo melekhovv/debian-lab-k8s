@@ -5,13 +5,15 @@ echo "========================================="
 echo "  Debian Desktop (XFCE) - Docker/K8s    "
 echo "========================================="
 
-# Пересоздаём пароль VNC из переменной окружения (поддержка K8s secrets)
-if [ -n "$VNC_PASSWORD" ]; then
-    echo "Устанавливаем VNC пароль..."
-    mkdir -p ~/.vnc
-    echo "$VNC_PASSWORD" | vncpasswd -f > ~/.vnc/passwd
-    chmod 600 ~/.vnc/passwd
+# Пароль VNC берётся только из переменной окружения (.env / K8s Secret)
+if [ -z "$VNC_PASSWORD" ]; then
+    echo "ОШИБКА: переменная VNC_PASSWORD не задана" >&2
+    exit 1
 fi
+echo "Устанавливаем VNC пароль..."
+mkdir -p ~/.vnc
+echo "$VNC_PASSWORD" | vncpasswd -f > ~/.vnc/passwd
+chmod 600 ~/.vnc/passwd
 
 # Завершаем старые VNC сессии если есть
 vncserver -kill :1 2>/dev/null || true
@@ -38,7 +40,6 @@ echo "  Доступ к рабочему столу:"
 echo ""
 echo "  Браузер (noVNC):  http://localhost:$NOVNC_PORT/vnc.html"
 echo "  VNC клиент:       localhost:$VNC_PORT"
-echo "  Пароль VNC:       $VNC_PASSWORD"
 echo "========================================="
 echo ""
 

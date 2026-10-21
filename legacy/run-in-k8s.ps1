@@ -12,8 +12,10 @@ try {
     Add-LocalGroupMember -Group "Администраторы Hyper-V" -Member "$env:USERNAME" -ErrorAction SilentlyContinue
 } catch {}
 
-$minikube = "C:\Users\nise0\AppData\Local\Programs\minikube.exe"
-$kubectl  = "C:\Users\nise0\AppData\Local\Programs\kubectl.exe"
+# Paths to minikube/kubectl come from ..\lab.config.ps1 (see ..\lab-common.ps1)
+. (Join-Path $PSScriptRoot "..\lab-common.ps1")
+Assert-LabTool "minikube" $minikube "MinikubePath"
+Assert-LabTool "kubectl"  $kubectl  "KubectlPath"
 
 # Запуск Minikube
 & $minikube start --driver=hyperv --memory=4096 --cpus=2
@@ -33,7 +35,7 @@ Write-Host "==========================================================" -Foregro
 Write-Host "  [3/4] Развёртывание Debian с графическим интерфейсом XFCE..." -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-$manifest = Join-Path $PSScriptRoot "k8s\debian-webtop.yaml"
+$manifest = Join-Path $PSScriptRoot "..\k8s\debian-webtop.yaml"
 & $kubectl apply -f $manifest
 
 Write-Host ""

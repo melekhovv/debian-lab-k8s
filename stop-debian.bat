@@ -7,13 +7,7 @@ echo   Остановка кластера Kubernetes для освобожде�
 echo ==========================================================
 echo.
 
-set "PATH=%PATH%;C:\Users\nise0\AppData\Local\Programs"
-
-echo Приостановка Minikube...
-minikube pause
-if %errorlevel% neq 0 (
-    minikube stop
-)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0stop-debian.ps1"
 
 echo.
 echo Кластер остановлен. Память и процессор освобождены!

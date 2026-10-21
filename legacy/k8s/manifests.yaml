@@ -12,16 +12,10 @@ metadata:
     app: debian-desktop
 
 ---
-# 2. Secret — VNC пароль (base64: echo -n "change-me" | base64)
-apiVersion: v1
-kind: Secret
-metadata:
-  name: debian-desktop-secret
-  namespace: debian-desktop
-type: Opaque
-data:
-  # echo -n "change-me" | base64  →  Y2hhbmdlLW1l
-  vnc-password: Y2hhbmdlLW1l
+# 2. Secret — VNC пароль в репозитории НЕ хранится. Создайте его вручную до применения манифеста:
+#    kubectl create namespace debian-desktop
+#    kubectl create secret generic debian-desktop-secret -n debian-desktop --from-literal=vnc-password='<ваш_пароль>'
+# (Deployment ниже читает ключ vnc-password из секрета debian-desktop-secret)
 
 ---
 # 3. PersistentVolumeClaim — хранилище данных пользователя

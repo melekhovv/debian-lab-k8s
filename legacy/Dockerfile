@@ -6,7 +6,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NOVNC_PORT=6080 \
     VNC_RESOLUTION=1280x800 \
     VNC_DEPTH=24 \
-    VNC_PASSWORD=change-me \
     USER=debianuser \
     HOME=/home/debianuser
 
@@ -48,15 +47,13 @@ ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8
 
 # Создание пользователя (без root)
+# Пароль для входа не задаётся: доступ к sudo - через NOPASSWD ниже
 RUN useradd -m -s /bin/bash ${USER} \
-    && echo "${USER}:change-me" | chpasswd \
     && usermod -aG sudo ${USER} \
     && echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Настройка VNC
+# Настройка VNC (пароль создаётся при старте контейнера из переменной VNC_PASSWORD, см. scripts/start.sh)
 RUN mkdir -p ${HOME}/.vnc \
-    && echo "${VNC_PASSWORD}" | vncpasswd -f > ${HOME}/.vnc/passwd \
-    && chmod 600 ${HOME}/.vnc/passwd \
     && chown -R ${USER}:${USER} ${HOME}/.vnc
 
 # Конфигурация XFCE (убираем лишние окна при старте)

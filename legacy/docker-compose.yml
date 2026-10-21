@@ -8,7 +8,7 @@ services:
 
     # Переменные окружения
     environment:
-      - VNC_PASSWORD=change-me    # Пароль для VNC
+      - VNC_PASSWORD=${VNC_PASSWORD:?Задайте VNC_PASSWORD в файле .env (см. .env.example)}
       - VNC_RESOLUTION=1280x800         # Разрешение экрана
       - VNC_DEPTH=24                    # Глубина цвета
       - VNC_PORT=5901

@@ -1,6 +1,7 @@
 # Сохраняет текущее состояние всех контейнеров (сервер + 3 клиента)
 # Запускать после установки пакетов / настройки конфигов
 $ErrorActionPreference = "Continue"
+. (Join-Path $PSScriptRoot "lab-common.ps1")   # adds docker to PATH
 
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  Сохранение состояния контейнеров...       " -ForegroundColor Cyan

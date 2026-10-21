@@ -1,0 +1,4 @@
+# Machine-specific settings and secrets
+lab.config.ps1
+.env
+legacy/.env

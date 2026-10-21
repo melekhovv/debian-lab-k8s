@@ -6,10 +6,10 @@ Write-Host "  Starting Debian Lab Network in Kubernetes...            " -Foregro
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host ""
 
-$env:Path += ";C:\Users\nise0\AppData\Local\Programs;C:\Users\nise0\AppData\Local\Programs\DockerDesktop\resources\bin"
-$dockerExe = "C:\Users\nise0\AppData\Local\Programs\DockerDesktop\Docker Desktop.exe"
-$minikube  = "C:\Users\nise0\AppData\Local\Programs\minikube.exe"
-$kubectl   = "C:\Users\nise0\AppData\Local\Programs\kubectl.exe"
+# Settings and tool paths (lab.config.ps1) -> $minikube, $kubectl, $dockerExe, ports, $BindAddress
+. (Join-Path $PSScriptRoot "lab-common.ps1")
+Assert-LabTool "minikube" $minikube "MinikubePath"
+Assert-LabTool "kubectl"  $kubectl  "KubectlPath"
 $manifestServer  = Join-Path $PSScriptRoot "k8s\debian-webtop.yaml"
 $manifestClients = Join-Path $PSScriptRoot "k8s\debian-clients.yaml"
 
@@ -23,6 +23,7 @@ try {
 
 if (-not $dockerReady) {
     Write-Host "Starting Docker Desktop..." -ForegroundColor Yellow
+    Assert-LabTool "Docker Desktop" $dockerExe "DockerDesktopExe"
     Start-Process $dockerExe
     Write-Host "Waiting for Docker Engine to start..." -ForegroundColor Yellow
     $retries = 30
@@ -260,11 +261,11 @@ Write-Host "Network topology, Zabbix, and tab titles are active!" -ForegroundCol
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "  SUCCESS! All 4 machines are connected and ready!         " -ForegroundColor Green
-Write-Host "  Server GUI: http://localhost:3000                       " -ForegroundColor Cyan
-Write-Host "  Zabbix Web: http://localhost:3000/zabbix                " -ForegroundColor Magenta
-Write-Host "  Client 1:   http://localhost:3001 (IP: 192.168.2.1)     " -ForegroundColor Cyan
-Write-Host "  Client 2:   http://localhost:3002 (IP: 192.168.3.1)     " -ForegroundColor Cyan
-Write-Host "  Client 3:   http://localhost:3003 (IP: 192.168.4.1)     " -ForegroundColor Cyan
+Write-Host "  Server GUI: http://localhost:$ServerPort" -ForegroundColor Cyan
+Write-Host "  Zabbix Web: http://localhost:$ServerPort/zabbix" -ForegroundColor Magenta
+Write-Host "  Client 1:   http://localhost:$($ClientPorts[0]) (IP: 192.168.2.1)" -ForegroundColor Cyan
+Write-Host "  Client 2:   http://localhost:$($ClientPorts[1]) (IP: 192.168.3.1)" -ForegroundColor Cyan
+Write-Host "  Client 3:   http://localhost:$($ClientPorts[2]) (IP: 192.168.4.1)" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "NOTE: Keep this window open while working in the lab!" -ForegroundColor Yellow
@@ -272,24 +273,22 @@ Write-Host "To stop the session - close this window." -ForegroundColor Gray
 Write-Host ""
 
 # Open 4 browser tabs
-Start-Process "http://localhost:3000"
-Start-Process "http://localhost:3001"
-Start-Process "http://localhost:3002"
-Start-Process "http://localhost:3003"
+Start-Process "http://localhost:$ServerPort"
+foreach ($cp in $ClientPorts) { Start-Process "http://localhost:$cp" }
 
 # Start port-forwards
 $ports = @(
-    @{ Svc = "debian-desktop-service";  Port = 3000 },
-    @{ Svc = "debian-client-1-service"; Port = 3001 },
-    @{ Svc = "debian-client-2-service"; Port = 3002 },
-    @{ Svc = "debian-client-3-service"; Port = 3003 }
+    @{ Svc = "debian-desktop-service";  Port = $ServerPort },
+    @{ Svc = "debian-client-1-service"; Port = $ClientPorts[0] },
+    @{ Svc = "debian-client-2-service"; Port = $ClientPorts[1] },
+    @{ Svc = "debian-client-3-service"; Port = $ClientPorts[2] }
 )
 
 $procs = @()
 foreach ($entry in $ports) {
     $svc = $entry.Svc
     $p   = $entry.Port
-    $proc = Start-Process $kubectl -ArgumentList "port-forward svc/$svc -n debian-lab ${p}:3000 --address 0.0.0.0" -PassThru -WindowStyle Hidden
+    $proc = Start-Process $kubectl -ArgumentList "port-forward svc/$svc -n debian-lab ${p}:3000 --address $BindAddress" -PassThru -WindowStyle Hidden
     $procs += $proc
 }
 
