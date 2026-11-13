@@ -1,0 +1,37 @@
+name: Validate repository
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-validation:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install validation dependency
+        run: python -m pip install -r tools/requirements.txt
+      - name: Check manifest contracts and documentation
+        run: python tools/validate_repository.py
+      - name: Test rejection of broken manifests
+        run: python -m unittest discover -s tools -p test_validation.py -v
+      - name: Parse PowerShell without executing lab scripts
+        shell: pwsh
+        run: |
+          $failures = @()
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            $failures += @($parseErrors)
+          }
+          if ($failures.Count -gt 0) { $failures | Format-List; exit 1 }
+          Write-Output 'PASS: PowerShell syntax; no scripts executed'

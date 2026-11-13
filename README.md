@@ -1,6 +1,12 @@
-# Debian Network Lab — портфолио системного администратора
+# Debian Network Lab
+
+[![Validate repository](https://github.com/melekhovv/debian-lab-k8s/actions/workflows/validate.yml/badge.svg)](https://github.com/melekhovv/debian-lab-k8s/actions/workflows/validate.yml)
+
+**Linux networking · Kubernetes · PowerShell · Container state recovery**
 
 [English](README.en.md)
+
+[Демонстрация за 7 минут](docs/demo.md) · [Инженерные решения](docs/decisions.md) · [Доказательства](docs/evidence/README.md)
 
 Домашняя лаборатория для изучения Linux, IP-маршрутизации и эксплуатации контейнерных сред. Windows и Docker Desktop служат платформой для Minikube; внутри Kubernetes разворачиваются сервер и три клиента Debian XFCE с рабочими столами в браузере.
 
@@ -10,15 +16,15 @@
 
 Основа документации: статический аудит коммита `b8a8e257080ed0c731942157e16c15e69892f275`, выполненный 14 ноября 2026 года. Лаборатория при подготовке документации не запускалась.
 
-Последующая [проверка доступности](docs/evidence/2026-11-14-preflight.md) 14 ноября: Docker Engine и Kubernetes API недоступны; runtime-проверки заблокированы. PowerShell и YAML прошли синтаксическую проверку без исполнения.
+**Проверено на стенде 14 ноября:** четыре Pod, сервисы, шесть направлений routing с входом/выходом пакетов на сервере, ответы трёх Zabbix agents и свежие метрики в БД. [Протокол и данные](docs/evidence/2026-11-14-runtime.md). Первоначальная недоступность Docker устранена запуском существующей среды. Независимый disaster recovery и alerting ещё не проверены.
 
 | Область | Подтверждено исходниками | Ещё требуется проверить на стенде |
 |---|---|---|
-| Kubernetes | Namespace, четыре Deployment и ClusterIP Service, requests/limits, образ по digest | Развёртывание на зафиксированных версиях инструментов |
-| Routing | IP, proxy ARP, policy routing, NOTRACK, встроенная проверка client1 → client2 | Все шесть направлений между клиентами и фактический путь пакетов |
-| Linux services | Условный запуск установленных MariaDB, Apache, Zabbix server/agent | Установка, конфигурации и работоспособность приложений |
-| Zabbix | Список сервисов и reverse proxy `/zabbix` | Метрики, hosts/templates, triggers и alert; готовый мониторинг не подтверждён |
-| Backup/recovery | Копирование writable layer, обработка whiteouts, экспорт/импорт архивов | Целостность и успешное восстановление файлов и БД |
+| Kubernetes | Четыре Pod запущены на зафиксированных версиях; манифесты и ресурсы в Git | Другие версии и нагрузка |
+| Routing | Шесть направлений: ответы TCP, рост forwarding и вход/выход на сервере с TTL 63 → 62 | Отказы и защита от обхода при изменении сети |
+| Linux services | Работающие MariaDB, Apache, Zabbix server/agent; frontend HTTP 200 | Воспроизводимая установка приложений из Git |
+| Zabbix | agent.ping = 1 от трёх клиентов; свежие метрики в БД | Экспорт конфигурации, тест trigger и уведомления |
+| Backup/recovery | Штатный restore отработал; четыре Windows-архива читаются, SHA-256 зафиксированы | Независимое восстановление Windows-копий и контроль БД |
 
 Это учебная среда, а не production-кластер. Рабочие столы — контейнеры с общим ядром ноды, не отдельные VM. Наличие реализации не означает коммерческий опыт или выполненную эксплуатационную задачу.
 
@@ -30,7 +36,7 @@
 - Linux services: управление установленными сервисами и сохранение имени хоста.
 - Сохранение состояния: overlayfs, rsync, архивирование и ограничения восстановления.
 
-Кейсы: [routing](docs/cases/routing.md), [Linux services](docs/cases/linux-services.md), [Zabbix monitoring](docs/cases/zabbix-monitoring.md), [backup/recovery](docs/cases/backup-recovery.md). Сейчас подтверждена реализация по исходникам; стендовые результаты ещё не приложены.
+Кейсы: [routing](docs/cases/routing.md), [Linux services](docs/cases/linux-services.md), [Zabbix monitoring](docs/cases/zabbix-monitoring.md), [backup/recovery](docs/cases/backup-recovery.md). Стендовые результаты приложены в [протоколе](docs/evidence/2026-11-14-runtime.md); ограничения каждого кейса отмечены отдельно.
 
 ## Архитектура
 
@@ -61,7 +67,7 @@ http://localhost:3000/zabbix требует отдельно установле�
 
 ## Быстрый старт
 
-Нужны Windows, PowerShell, Docker Desktop с Linux containers, `minikube` и `kubectl`. Значения для новой ноды: 4 CPU и 6144 MB; Docker Desktop и Windows требуют дополнительной памяти. Проверенные версии и измерения потребления пока не опубликованы.
+Нужны Windows, PowerShell, Docker Desktop с Linux containers, `minikube` и `kubectl`. Значения для новой ноды: 4 CPU и 6144 MB; Docker Desktop и Windows требуют дополнительной памяти. Версии проверенной сессии опубликованы в [протоколе](docs/evidence/2026-11-14-runtime.md); нагрузочное потребление не измерялось.
 
 Используйте выделенную лабораторную среду: скрипт меняет маршрутизацию и firewall ноды и обращается к Docker-контейнеру `minikube`. Перед запуском прочитайте [installation](docs/installation.md) и [security considerations](docs/security-considerations.md).
 
@@ -102,4 +108,8 @@ http://localhost:3000/zabbix требует отдельно установле�
 - [Доказательства и критерии приёмки](docs/evidence/README.md)
 - [Аудит и план дальнейших изменений](docs/audit-and-roadmap.md)
 
-Следующий шаг — собрать обезличенные результаты на существующем стенде. Обновление образа, изменение сети, привилегий или хранения и испытание восстановления требуют отдельного согласования и плана возврата.
+## Автоматическая проверка
+
+GitHub Actions проверяет контракты текущих манифестов, ссылки и синтаксис PowerShell, не исполняя лабораторные скрипты. Шесть regression-тестов проверяют валидную конфигурацию и обнаружение ошибочных selectors, targetPort, незакреплённого образа, внешней публикации и отсутствующих limits. Это offline-проверки, не тест доступности приложений. Команды для локального запуска и сборщик наблюдений: [демонстрация](docs/demo.md).
+
+Следующий шаг — независимая проверка восстановления на тестовой копии и контролируемая проверка alerting. Обновление образа, изменение сети, привилегий или хранения и испытание восстановления требуют отдельного согласования и плана возврата.

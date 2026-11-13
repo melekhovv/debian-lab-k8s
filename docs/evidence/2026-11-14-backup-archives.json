@@ -1,0 +1,30 @@
+[
+  {
+    "file": "client1.tgz",
+    "bytes": 43605244,
+    "sha256": "528577b50abb80130a9c141af866707e653d1a9cb47732316b56c10db3c4b644",
+    "archive_readable": true,
+    "has_fs_and_timestamp": true
+  },
+  {
+    "file": "client2.tgz",
+    "bytes": 43604716,
+    "sha256": "e83fe2ecf3348ac23842b91562e926adf80dff03eeb9d5f1d0be55f7d0330183",
+    "archive_readable": true,
+    "has_fs_and_timestamp": true
+  },
+  {
+    "file": "client3.tgz",
+    "bytes": 43605901,
+    "sha256": "a1698b4e098f1e239451f018c1a5dffdb162adc330db7aef8dbcd490bd963bf4",
+    "archive_readable": true,
+    "has_fs_and_timestamp": true
+  },
+  {
+    "file": "desktop.tgz",
+    "bytes": 268869055,
+    "sha256": "5bc9338382eb93503bf2146514c41e7be7dd551bf2a078051513ab370ac13905",
+    "archive_readable": true,
+    "has_fs_and_timestamp": true
+  }
+]

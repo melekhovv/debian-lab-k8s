@@ -1,0 +1,74 @@
+[
+  {
+    "source": "192.168.2.1",
+    "destination": "192.168.3.1",
+    "ttl": 63,
+    "direction": "incoming"
+  },
+  {
+    "source": "192.168.2.1",
+    "destination": "192.168.3.1",
+    "ttl": 62,
+    "direction": "outgoing"
+  },
+  {
+    "source": "192.168.2.1",
+    "destination": "192.168.4.1",
+    "ttl": 63,
+    "direction": "incoming"
+  },
+  {
+    "source": "192.168.2.1",
+    "destination": "192.168.4.1",
+    "ttl": 62,
+    "direction": "outgoing"
+  },
+  {
+    "source": "192.168.3.1",
+    "destination": "192.168.2.1",
+    "ttl": 63,
+    "direction": "incoming"
+  },
+  {
+    "source": "192.168.3.1",
+    "destination": "192.168.2.1",
+    "ttl": 62,
+    "direction": "outgoing"
+  },
+  {
+    "source": "192.168.3.1",
+    "destination": "192.168.4.1",
+    "ttl": 63,
+    "direction": "incoming"
+  },
+  {
+    "source": "192.168.3.1",
+    "destination": "192.168.4.1",
+    "ttl": 62,
+    "direction": "outgoing"
+  },
+  {
+    "source": "192.168.4.1",
+    "destination": "192.168.2.1",
+    "ttl": 63,
+    "direction": "incoming"
+  },
+  {
+    "source": "192.168.4.1",
+    "destination": "192.168.2.1",
+    "ttl": 62,
+    "direction": "outgoing"
+  },
+  {
+    "source": "192.168.4.1",
+    "destination": "192.168.3.1",
+    "ttl": 63,
+    "direction": "incoming"
+  },
+  {
+    "source": "192.168.4.1",
+    "destination": "192.168.3.1",
+    "ttl": 62,
+    "direction": "outgoing"
+  }
+]

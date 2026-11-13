@@ -1,0 +1,155 @@
+{
+  "timestamp_utc": "2026-11-13T16:48:15.956218+00:00",
+  "context": "minikube",
+  "checks": [
+    {
+      "label": "Kubernetes inventory",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-desktop: addresses",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-desktop: routes",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-desktop: GUI listener",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-desktop: mariadb",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-desktop: apache2",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-desktop: zabbix-server",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-desktop: zabbix-agent",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-1: addresses",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-1: routes",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-1: GUI listener",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-1: zabbix-agent",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-2: addresses",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-2: routes",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-2: GUI listener",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-2: zabbix-agent",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-3: addresses",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-3: routes",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-3: GUI listener",
+      "exit_code": 0
+    },
+    {
+      "label": "debian-client-3: zabbix-agent",
+      "exit_code": 0
+    },
+    {
+      "label": "client1 -> client2",
+      "exit_code": 0
+    },
+    {
+      "label": "client1 -> client3",
+      "exit_code": 0
+    },
+    {
+      "label": "client2 -> client1",
+      "exit_code": 0
+    },
+    {
+      "label": "client2 -> client3",
+      "exit_code": 0
+    },
+    {
+      "label": "client3 -> client1",
+      "exit_code": 0
+    },
+    {
+      "label": "client3 -> client2",
+      "exit_code": 0
+    }
+  ],
+  "routing": [
+    {
+      "source": 1,
+      "destination": 2,
+      "response": true,
+      "forwarding_delta": 2,
+      "limitation": "Aggregate counter: corroborate packet path independently"
+    },
+    {
+      "source": 1,
+      "destination": 3,
+      "response": true,
+      "forwarding_delta": 2,
+      "limitation": "Aggregate counter: corroborate packet path independently"
+    },
+    {
+      "source": 2,
+      "destination": 1,
+      "response": true,
+      "forwarding_delta": 2,
+      "limitation": "Aggregate counter: corroborate packet path independently"
+    },
+    {
+      "source": 2,
+      "destination": 3,
+      "response": true,
+      "forwarding_delta": 2,
+      "limitation": "Aggregate counter: corroborate packet path independently"
+    },
+    {
+      "source": 3,
+      "destination": 1,
+      "response": true,
+      "forwarding_delta": 2,
+      "limitation": "Aggregate counter: corroborate packet path independently"
+    },
+    {
+      "source": 3,
+      "destination": 2,
+      "response": true,
+      "forwarding_delta": 2,
+      "limitation": "Aggregate counter: corroborate packet path independently"
+    }
+  ],
+  "note": "Raw inventory and process output omitted; no secrets or application payload captured."
+}

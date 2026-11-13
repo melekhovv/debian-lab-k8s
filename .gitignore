@@ -5,3 +5,9 @@ legacy/.env
 
 # Machine state backups (large, personal)
 backups/
+
+# Local analysis and observation output
+graphify-out/
+__pycache__/
+*.pyc
+lab-observation*.json

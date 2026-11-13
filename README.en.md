@@ -1,6 +1,12 @@
-# Debian Network Lab — System Administration Portfolio
+# Debian Network Lab
+
+[![Validate repository](https://github.com/melekhovv/debian-lab-k8s/actions/workflows/validate.yml/badge.svg)](https://github.com/melekhovv/debian-lab-k8s/actions/workflows/validate.yml)
+
+**Linux networking · Kubernetes · PowerShell · Container state recovery**
 
 [Русский](README.md)
+
+[Seven-minute demo](docs/demo.md) · [Engineering decisions](docs/decisions.md) · [Evidence](docs/evidence/README.md) (detailed guides in Russian)
 
 A home lab for Linux administration, IPv4 routing and container operations. Windows and Docker Desktop host a single-node Minikube cluster with one Debian XFCE server and three clients, each accessible through a browser desktop.
 
@@ -10,15 +16,15 @@ The main engineering features are routing between three lab subnets through the 
 
 Documentation is based on a static review of commit `b8a8e257080ed0c731942157e16c15e69892f275` performed on November 14, 2026. The lab was not started during documentation work.
 
-A subsequent [availability check](docs/evidence/2026-11-14-preflight.md) on November 14 found Docker Engine and the Kubernetes API unavailable, preventing runtime checks. PowerShell and YAML syntax checks passed without executing the lab scripts.
+**Runtime checked on November 14:** four Pods, services, all six client routing directions with packets entering/leaving the server, three responding Zabbix agents and recent metrics in the database. [Protocol and evidence](docs/evidence/2026-11-14-runtime.md). Starting the existing environment resolved the initial Docker unavailability. Independent disaster recovery and alerting remain untested.
 
 | Area | Verified in source | Still requires runtime evidence |
 |---|---|---|
-| Kubernetes | Namespace, four Deployments and ClusterIP Services, requests/limits, digest-pinned image | Deployment on recorded tool versions |
-| Routing | IPv4 addresses, proxy ARP, policy routing, NOTRACK and a client1 → client2 self-test | All six directed client paths and actual packet traversal |
-| Linux services | Conditional startup of installed MariaDB, Apache and Zabbix services | Package installation, application configuration and health |
-| Zabbix | Service names and `/zabbix` reverse proxy | Metrics, hosts/templates, triggers and an alert; operational monitoring is unverified |
-| Backup/recovery | Writable-layer copy, whiteout handling, archive export/import | Integrity checks and successful file/database recovery |
+| Kubernetes | Four Pods running on recorded versions; manifests and resources in Git | Other versions and load testing |
+| Routing | Six TCP paths, forwarding counters and server ingress/egress with TTL 63 → 62 | Failure cases and bypass resistance after configuration changes |
+| Linux services | Running MariaDB, Apache and Zabbix services; frontend HTTP 200 | Reproducible installation from Git |
+| Zabbix | Three agents return agent.ping = 1; recent client metrics in the database | Configuration export, trigger and notification tests |
+| Backup/recovery | Normal restore completed; four Windows archives readable with recorded SHA-256 | Independent Windows-archive restore and database verification |
 
 This is a learning environment, not a production cluster. Desktops are containers sharing the node kernel, not independent VMs. Repository content does not establish commercial experience or completed operational exercises.
 
@@ -30,7 +36,7 @@ This is a learning environment, not a production cluster. Desktops are container
 - Linux operations: startup of installed services and hostname persistence helpers.
 - State management: overlayfs, rsync, archiving and recovery limitations.
 
-Case studies (Russian): [routing](docs/cases/routing.md), [Linux services](docs/cases/linux-services.md), [Zabbix monitoring](docs/cases/zabbix-monitoring.md), [backup/recovery](docs/cases/backup-recovery.md). All currently have source-level evidence only; runtime results have not been supplied.
+Case studies (Russian): [routing](docs/cases/routing.md), [Linux services](docs/cases/linux-services.md), [Zabbix monitoring](docs/cases/zabbix-monitoring.md), [backup/recovery](docs/cases/backup-recovery.md). Runtime results are linked in the [protocol](docs/evidence/2026-11-14-runtime.md); each case states its remaining limitations.
 
 ## Architecture
 
@@ -61,7 +67,7 @@ http://localhost:3000/zabbix requires a separately installed and configured Zabb
 
 ## Getting started
 
-Requirements: Windows, PowerShell, Docker Desktop with Linux containers, `minikube` and `kubectl`. New nodes default to 4 CPUs and 6144 MB RAM. Allow additional memory for Docker Desktop and Windows. Tested tool versions and measured resource usage have not been published yet.
+Requirements: Windows, PowerShell, Docker Desktop with Linux containers, `minikube` and `kubectl`. New nodes default to 4 CPUs and 6144 MB RAM. Allow additional memory for Docker Desktop and Windows. Versions from the observed session are listed in the [protocol](docs/evidence/2026-11-14-runtime.md); load-related resource usage has not been measured.
 
 Use a dedicated lab environment. Startup changes node routing/firewall rules and directly targets a Docker container named `minikube`. Read [installation](docs/installation.md) and [security considerations](docs/security-considerations.md) before running it.
 
@@ -102,4 +108,8 @@ The desktops are intended for local learning without configured desktop authenti
 - [Evidence and acceptance criteria](docs/evidence/README.md)
 - [Audit and roadmap](docs/audit-and-roadmap.md)
 
-Next: collect sanitized evidence from the existing lab. Image, network, privilege and storage changes, as well as recovery drills, require separate agreement and a rollback plan.
+## Automated validation
+
+GitHub Actions checks active manifest contracts, local links and PowerShell syntax without executing the lab scripts. Six regression tests cover the current configuration and detection of broken selectors, target ports, unpinned images, external exposure and missing resource limits. These are offline checks, not application availability tests. Local commands and an observation collector are documented in the [demo guide](docs/demo.md).
+
+Next: independent recovery testing on a separate copy and controlled alerting validation. Image, network, privilege and storage changes, as well as recovery drills, require separate agreement and a rollback plan.
